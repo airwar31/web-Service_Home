@@ -1,5 +1,22 @@
-<!DOCTYPE html><html lang="ru"><head>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
     <meta charset="UTF-8">
-    <title>Базовая разметка HTML</title></head><body>
-    <h1>Code Basics</h1>
-    <p></p></body></html>
+    <title>Умный дом</title>
+    <link rel="stylesheet" href="main.css">
+</head>
+<body>
+    <h1>Умный дом</h1>
+    <div id="status">
+        <h2>Статус устройств</h2>
+        <p id="device-status">Загрузка...</p>
+    </div>
+    <div id="command">
+        <h2>Отправить команду</h2>
+        <input type="text" id="command-input" placeholder="Например: включи свет">
+        <button id="send-command">Отправить</button>
+        <p id="response"></p>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
