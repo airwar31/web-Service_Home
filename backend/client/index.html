@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Voice client</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 24px; }
+    button { margin-right: 8px; }
+    pre { background: #f6f8fa; padding: 12px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Голос → Действие</h1>
+  <p><button id="rec">Запись</button> <button id="stop" disabled>Стоп</button> <button id="send" disabled>Отправить</button></p>
+  <p><input type="file" id="file" accept=".wav,.mp3,.ogg,.m4a" /></p>
+  <pre id="out">{}</pre>
+  <h2>Устройства (реальное время)</h2>
+  <pre id="devices">{}</pre>
+
+  <script>
+    let mediaRecorder, chunks = [], blob = null;
+
+    async function startRecording() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      chunks = [];
+      mediaRecorder.ondataavailable = e => chunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        blob = new Blob(chunks, { type: 'audio/webm' });
+        document.getElementById('send').disabled = false;
+      };
+      mediaRecorder.start();
+      document.getElementById('rec').disabled = true;
+      document.getElementById('stop').disabled = false;
+    }
+
+    function stopRecording() {
+      mediaRecorder.stop();
+      document.getElementById('rec').disabled = false;
+      document.getElementById('stop').disabled = true;
+    }
+
+    async function sendAudio() {
+      const fileInput = document.getElementById('file');
+      let fileBlob = null;
+
+      if (fileInput.files.length > 0) {
+        fileBlob = fileInput.files[0];
+      } else if (blob) {
+        // MediaRecorder webm/ogg — сервер сконвертирует в wav
+        fileBlob = new File([blob], 'recording.webm', { type: 'audio/webm' });
+      } else {
+        alert('Нет аудио для отправки');
+        return;
+      }
+
+      const form = new FormData();
+      form.append('audio', fileBlob);
+
+      const res = await fetch('http://127.0.0.1:5000/api/speech_to_action', {
+        method: 'POST',
+        body: form
+      });
+
+      const json = await res.json();
+      document.getElementById('out').textContent = JSON.stringify(json, null, 2);
+    }
+
+    document.getElementById('rec').onclick = startRecording;
+    document.getElementById('stop').onclick = stopRecording;
+    document.getElementById('send').onclick = sendAudio;
+
+    // Live devices via SSE
+    const sse = new EventSource('http://127.0.0.1:5000/api/devices/stream');
+    sse.onmessage = (e) => {
+      try {
+        const state = JSON.parse(e.data);
+        document.getElementById('devices').textContent = JSON.stringify(state, null, 2);
+      } catch (err) {}
+    };
+  </script>
+</body>
+</html>
