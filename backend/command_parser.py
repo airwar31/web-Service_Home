@@ -37,15 +37,35 @@ def parse_command(text: str) -> Dict[str, Any]:
         unit = m.group(2)
         return {"action": "set_timer", "params": {"value": value, "unit": unit}, "raw": text}
 
-    m = re.search(r"\bоткрой\b\s+([a-zA-Zа-яА-Я0-9._-]+)", t)
+    # Шторы: открой/закрой шторы (в комнате) - должно быть перед общим правилом "открой"
+    m = re.search(r"\b(открой|открыть)\b.*\bштор[ыауе]?\b", t)
     if m:
-        target = m.group(1)
-        return {"action": "open_app", "params": {"target": target}, "raw": text}
+        room = _extract_room(t)
+        return {"action": "open_curtain", "params": {"room": room}, "raw": text}
+    m = re.search(r"\b(закрой|закрыть)\b.*\bштор[ыауе]?\b", t)
+    if m:
+        room = _extract_room(t)
+        return {"action": "close_curtain", "params": {"room": room}, "raw": text}
 
-    m = re.search(r"\bгромкост[ьи]\b\s+(\d{1,3})", t)
+    # Пылесос: запусти/останови/включи/выключи
+    m = re.search(r"\b(запусти|запустить|включи|включить|включ|запуск)\b\s+пылесос\b", t)
     if m:
-        vol = max(0, min(100, int(m.group(1))))
-        return {"action": "set_volume", "params": {"value": vol}, "raw": text}
+        room = _extract_room(t)
+        return {"action": "start_vacuum", "params": {"room": room}, "raw": text}
+    m = re.search(r"\b(останови|остановить|стоп|выключи|выключить|выключ|остановка)\b\s+пылесос\b", t)
+    if m:
+        room = _extract_room(t)
+        return {"action": "stop_vacuum", "params": {"room": room}, "raw": text}
+    
+    # Альтернативные варианты команд для пылесоса
+    m = re.search(r"\bпылесос\b.*\b(запусти|запустить|включи|включить|включ|запуск)\b", t)
+    if m:
+        room = _extract_room(t)
+        return {"action": "start_vacuum", "params": {"room": room}, "raw": text}
+    m = re.search(r"\bпылесос\b.*\b(останови|остановить|стоп|выключи|выключить|выключ|остановка)\b", t)
+    if m:
+        room = _extract_room(t)
+        return {"action": "stop_vacuum", "params": {"room": room}, "raw": text}
 
     # Снизить температуру
     m = re.search(r"сниз(ь|ить|и) температуру( в ([а-я]+))?", t)
@@ -69,6 +89,17 @@ def parse_command(text: str) -> Dict[str, Any]:
         value = int(m.group(4))
         room = _extract_room(m.group(3) or t)
         return {"action": "set_humidity", "params": {"room": room, "value": value}, "raw": text}
+
+    # Общие правила (должны быть в конце)
+    m = re.search(r"\bоткрой\b\s+([a-zA-Zа-яА-Я0-9._-]+)", t)
+    if m:
+        target = m.group(1)
+        return {"action": "open_app", "params": {"target": target}, "raw": text}
+
+    m = re.search(r"\bгромкост[ьи]\b\s+(\d{1,3})", t)
+    if m:
+        vol = max(0, min(100, int(m.group(1))))
+        return {"action": "set_volume", "params": {"value": vol}, "raw": text}
 
     return {"action": "unknown", "params": {}, "raw": text}
 

@@ -2,26 +2,120 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
     <title>Умный дом</title>
     <link rel="stylesheet" href="main.css">
+    <style>
+      .layout { display: flex; gap: 16px; }
+      #sidebar { width: 200px; min-width: 200px; }
+      #sidebar .tab-btn { display: block; width: 100%; text-align: left; padding: 10px 12px; border: 1px solid #d0d7de; background: #ffffff; color:#0a0a0a; border-radius: 8px; margin-bottom: 8px; cursor: pointer; font-weight: 600; }
+      #sidebar .tab-btn.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+      #sidebar .tab-btn:hover { background:#f1f5ff; }
+      main { flex: 1; }
+      .hero { display: flex; align-items: center; gap: 16px; padding: 32px 0; }
+      .hero-logo { width: 120px; height: 120px; border-radius: 50%; background: linear-gradient(135deg, #0d6efd, #66b2ff); display:flex; align-items:center; justify-content:center; color:#fff; font-size: 64px; box-shadow: 0 8px 24px rgba(13,110,253,0.25); }
+      .hero-title { margin: 0; font-size: 28px; }
+      .hero-sub { margin: 4px 0 0 0; color: #444; line-height:1.5; }
+    </style>
 </head>
 <body>
-    <h1>Умный дом</h1>
-    <div id="status">
-        <h2>Статус устройств</h2>
-        <p id="device-status">Загрузка...</p>
-    </div>
-    <div id="command">
-        <h2>Отправить команду</h2>
-        <input type="text" id="command-input" placeholder="Например: включи свет">
-        <button id="send-command">Отправить</button>
-        <p id="response"></p>
-    </div>
-    <div id="voice">
-        <h2>Голосовое управление</h2>
-        <button id="voice-record">Записать голосовую команду</button>
-        <pre id="voice-out"></pre>
-    </div>
-    <script src="script.js"></script>
+  <div class="layout">
+    <aside id="sidebar">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+        <div style="width:36px;height:36px;border-radius:50%;background:#0d6efd;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;">🏠</div>
+        <div style="font-weight:700;">Умный дом</div>
+      </div>
+      <button class="tab-btn" data-tab="tab-home">Главная</button>
+      <button class="tab-btn" data-tab="tab-status">Статус</button>
+      <button class="tab-btn" data-tab="tab-rooms">Комнаты</button>
+      <button class="tab-btn" data-tab="tab-devices">Устройства</button>
+      <button class="tab-btn" data-tab="tab-voice">Голос</button>
+      <button class="tab-btn" data-tab="tab-camera">Камера</button>
+      <button class="tab-btn" data-tab="tab-about">О проекте</button>
+    </aside>
+
+    <main>
+      <section id="tab-home" class="tab-pane">
+        <div class="hero">
+          <div class="hero-logo">🏠</div>
+          <div>
+            <h1 class="hero-title">Умный дом</h1>
+            <p class="hero-sub">Единая панель управления для вашего дома: освещение, температура, влажность, камера и голосовые команды. Всё в одном месте, просто и понятно.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-status" class="tab-pane" style="display:none;">
+        <div id="status">
+          <h2>Статус устройств</h2>
+          <div id="status-grid" class="status-grid"></div>
+        </div>
+        <div id="command" style="margin-top:12px;">
+          <h2>Отправить команду</h2>
+          <input type="text" id="command-input" placeholder="Например: включи свет">
+          <button id="send-command">Отправить</button>
+          <p id="response"></p>
+        </div>
+      </section>
+
+      <section id="tab-rooms" class="tab-pane" style="display:none;">
+        <div id="rooms">
+          <h2>Комнаты</h2>
+          <div id="rooms-container"></div>
+        </div>
+      </section>
+
+      <section id="tab-devices" class="tab-pane" style="display:none;">
+        <div id="devices">
+          <h2>Устройства</h2>
+          
+          <div class="simple-controls">
+            <select id="device-type">
+              <option value="light">Свет</option>
+              <option value="thermometer">Термометр</option>
+              <option value="curtain">Шторы</option>
+              <option value="vacuum">Пылесос</option>
+            </select>
+            <select id="device-room">
+              <option value="зал">Зал</option>
+              <option value="кухня">Кухня</option>
+              <option value="комната">Комната</option>
+              <option value="ванная">Ванная</option>
+            </select>
+            <button id="device-action-btn">Включить</button>
+          </div>
+          
+          <div id="devices-list"></div>
+          <div id="device-status-display"></div>
+        </div>
+      </section>
+
+      <section id="tab-voice" class="tab-pane" style="display:none;">
+        <div id="voice">
+          <h2>Голосовое управление</h2>
+          <button id="voice-record">Записать голосовую команду</button>
+          <pre id="voice-out"></pre>
+        </div>
+      </section>
+
+      <section id="tab-camera" class="tab-pane" style="display:none;">
+        <div id="camera">
+          <h2>Камера (live)</h2>
+          <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select id="camera-select" style="min-width:220px"></select>
+            <button id="camera-refresh">Обновить камеры</button>
+          </div>
+          <video id="camera-video" autoplay playsinline style="width:100%;max-width:480px;background:#000;border-radius:8px"></video>
+          <p id="camera-status"></p>
+        </div>
+      </section>
+
+      <section id="tab-about" class="tab-pane" style="display:none;">
+        <h2>О проекте</h2>
+        <p>Минималистичная сине‑белая тема. Управление устройствами и датчиками, голосовой ввод и просмотр с камеры.</p>
+      </section>
+    </main>
+  </div>
+  <script src="script.js"></script>
 </body>
 </html>

@@ -1,17 +1,27 @@
 import os
 from typing import Optional
-from pydub import AudioSegment
-from pydub.utils import which
-from faster_whisper import WhisperModel  # type: ignore
 
 from backend.fileutils import get_ext, temp_filepath
 
+# Try to import heavy dependencies, but make them optional
+try:
+    from pydub import AudioSegment
+    from pydub.utils import which
+    from faster_whisper import WhisperModel  # type: ignore
+    SPEECH_RECOGNITION_AVAILABLE = True
+except ImportError as e:
+    SPEECH_RECOGNITION_AVAILABLE = False
+    print(f"Speech recognition dependencies not available: {e}")
+    print("Speech recognition features will be disabled. Install faster-whisper and pydub to enable.")
 
 class RecognitionError(Exception):
     pass
 
 
 def _configure_ffmpeg() -> None:
+    if not SPEECH_RECOGNITION_AVAILABLE:
+        raise RecognitionError("Speech recognition dependencies not available")
+    
     # Позволяем указать путь к ffmpeg через переменную окружения
     custom_path = os.getenv("FFMPEG_PATH")
     if custom_path and os.path.exists(custom_path):
@@ -65,6 +75,9 @@ def _normalize_lang_for_whisper(language: Optional[str]) -> Optional[str]:
 
 
 def recognize_from_file(file_path: str, language: str = "ru-RU", timeout: Optional[float] = None) -> str:
+    if not SPEECH_RECOGNITION_AVAILABLE:
+        raise RecognitionError("Speech recognition dependencies not available. Install faster-whisper and pydub.")
+    
     if not os.path.exists(file_path):
         raise RecognitionError("Файл не найден")
 

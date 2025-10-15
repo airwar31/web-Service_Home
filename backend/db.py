@@ -86,3 +86,13 @@ def update_device_state(device_id: int, is_on: bool) -> Optional[Dict[str, Any]]
         conn.close()
 
 
+def delete_device(device_id: int) -> bool:
+    conn = _connect()
+    try:
+        cur = conn.execute("DELETE FROM devices WHERE id=?", (device_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
