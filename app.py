@@ -10,7 +10,7 @@ import queue
 import threading
 from backend import db
 from backend.command_parser import parse_command
-from backend.speech_recognizer import recognize_from_file, RecognitionError
+from backend.speech_recognizer import recognize_from_file, RecognitionError, get_status
 import random
 from flask import make_response, send_from_directory
 import subprocess
@@ -80,14 +80,12 @@ def _update_vacuum_progress(vacuum_key: str):
         current_progress = VACUUM_PROGRESS.get(vacuum_key, 0)
         if current_progress < 100:
             VACUUM_PROGRESS[vacuum_key] = min(100, current_progress + random.randint(2, 4))  # +2-4%
-            _broadcast_state()
             # Schedule next update every 1 second
             VACUUM_TIMERS[vacuum_key] = threading.Timer(1, _update_vacuum_progress, args=[vacuum_key])
             VACUUM_TIMERS[vacuum_key].start()
         else:
             # Reset if 100% reached
             VACUUM_PROGRESS[vacuum_key] = 0
-            _broadcast_state()
             if vacuum_key in VACUUM_TIMERS:
                 VACUUM_TIMERS[vacuum_key].cancel()
                 del VACUUM_TIMERS[vacuum_key]
@@ -102,17 +100,32 @@ with _STATE_LOCK:
 _update_thermometers()
 
 _SUBSCRIBERS = []  # list[queue.Queue]
+_CACHED_DEVICES = []  # Кэш устройств
+_CACHED_DEVICES_TIMESTAMP = 0  # Время последнего обновления кэша
+CACHE_TTL = 5  # Время жизни кэша в секундах
+
+# Кэш устройств по комнате и типу для быстрого доступа
+_DEVICE_CACHE = {}  # {(room, type): device}
 
 def _get_devices_snapshot() -> dict:
+    import time
+    global _CACHED_DEVICES, _CACHED_DEVICES_TIMESTAMP
+    current_time = time.time()
+    
     with _STATE_LOCK:
         snapshot = json.loads(json.dumps(DEVICE_STATE))
         # Добавляем прогресс пылесоса
         snapshot["vacuum_progress"] = json.loads(json.dumps(VACUUM_PROGRESS))
-        # Добавляем устройства из базы
-        try:
-            snapshot["devices"] = db.list_devices()
-        except Exception:
-            snapshot["devices"] = []
+        
+        # Используем кэш устройств, если он не устарел
+        if current_time - _CACHED_DEVICES_TIMESTAMP > CACHE_TTL:
+            try:
+                _CACHED_DEVICES = db.list_devices()
+                _CACHED_DEVICES_TIMESTAMP = current_time
+            except Exception:
+                pass
+        
+        snapshot["devices"] = _CACHED_DEVICES
         return snapshot
 
 def _broadcast_state():
@@ -130,98 +143,167 @@ def _broadcast_state():
             except ValueError:
                 pass
 
+def _broadcast_state_async():
+    """Асинхронная версия broadcast_state для использования в критических путях"""
+    import threading
+    def _do_broadcast():
+        _broadcast_state()
+    threading.Thread(target=_do_broadcast, daemon=True).start()
+
+def _invalidate_device_cache():
+    """Принудительно обновляет кэш устройств"""
+    global _CACHED_DEVICES_TIMESTAMP, _DEVICE_CACHE, _CACHED_DEVICES
+    _CACHED_DEVICES_TIMESTAMP = 0
+    _DEVICE_CACHE = {}
+    _CACHED_DEVICES = []
+
+def _get_device_from_cache(room: str, type_: str):
+    """Быстрое получение устройства из кэша"""
+    cache_key = (room, type_)
+    if cache_key in _DEVICE_CACHE:
+        return _DEVICE_CACHE[cache_key]
+    
+    # Если нет в кэше, получаем из БД и кэшируем
+    dev = db.get_device_by_room_and_type(room, type_)
+    if dev:
+        _DEVICE_CACHE[cache_key] = dev
+    return dev
+
+def _update_device_cache(room: str, type_: str, device):
+    """Обновляет кэш устройства"""
+    cache_key = (room, type_)
+    _DEVICE_CACHE[cache_key] = device
+
 def _apply_command(parsed: dict):
+    import time
+    start_time = time.time()
+    
     try:
         action = parsed.get("action")
         params = parsed.get("params", {})
         room = params.get("room")
         
-        print(f"Applying command: action={action}, room={repr(room)}, params={params}")
-        print(f"Room type: {type(room)}, Room value: {repr(room)}")
-
-        if action == "turn_on_light" and room:
+        db_start = time.time()
+        if action == "turn_on_light":
+            if not room:
+                # Если комната не указана, выдаем ошибку
+                raise ValueError("Необходимо указать комнату для команды")
+            
             # ensure device exists in DB
-            dev = db.get_device_by_room_and_type(room, "light")
+            dev = _get_device_from_cache(room, "light")
             if not dev:
-                db.create_device(name=f"light:{room}", room=room, type_="light", is_on=True)
+                dev = db.create_device(name=f"light:{room}", room=room, type_="light", is_on=True)
+                _update_device_cache(room, "light", dev)
             else:
                 db.update_device_state(dev["id"], True)
+                _update_device_cache(room, "light", {**dev, "is_on": True})
             with _STATE_LOCK:
                 DEVICE_STATE.setdefault("lights", {})[room] = True
-            _broadcast_state()
-        elif action == "turn_off_light" and room:
-            dev = db.get_device_by_room_and_type(room, "light")
+        elif action == "turn_off_light":
+            if not room:
+                # Если комната не указана, выдаем ошибку
+                raise ValueError("Необходимо указать комнату для команды")
+            
+            dev = _get_device_from_cache(room, "light")
             if not dev:
-                db.create_device(name=f"light:{room}", room=room, type_="light", is_on=False)
+                dev = db.create_device(name=f"light:{room}", room=room, type_="light", is_on=False)
+                _update_device_cache(room, "light", dev)
             else:
                 db.update_device_state(dev["id"], False)
+                _update_device_cache(room, "light", {**dev, "is_on": False})
             with _STATE_LOCK:
                 DEVICE_STATE.setdefault("lights", {})[room] = False
-            _broadcast_state()
-        elif action == "decrease_temperature" and room:
+        elif action == "decrease_temperature":
+            if not room:
+                raise ValueError("Необходимо указать комнату для команды")
+            
             with _STATE_LOCK:
                 t = DEVICE_STATE["thermometers"].setdefault(room, {"temperature": 22.0, "humidity": 50.0})
                 t["temperature"] = max(10, t["temperature"] - 1)
-            _broadcast_state()
-        elif action == "decrease_humidity" and room:
+        elif action == "decrease_humidity":
+            if not room:
+                raise ValueError("Необходимо указать комнату для команды")
+            
             with _STATE_LOCK:
                 t = DEVICE_STATE["thermometers"].setdefault(room, {"temperature": 22.0, "humidity": 50.0})
                 t["humidity"] = max(20, t["humidity"] - 1)
-            _broadcast_state()
-        elif action == "set_temperature" and room and "value" in params:
+        elif action == "set_temperature":
+            if not room:
+                raise ValueError("Необходимо указать комнату для команды")
+            
+            if "value" not in params:
+                raise ValueError("Необходимо указать значение температуры")
+            
             with _STATE_LOCK:
                 t = DEVICE_STATE["thermometers"].setdefault(room, {"temperature": 22.0, "humidity": 50.0})
                 t["temperature"] = max(10, min(40, float(params["value"])))
-            _broadcast_state()
-        elif action == "set_humidity" and room and "value" in params:
+        elif action == "set_humidity":
+            if not room:
+                raise ValueError("Необходимо указать комнату для команды")
+            
+            if "value" not in params:
+                raise ValueError("Необходимо указать значение влажности")
+            
             with _STATE_LOCK:
                 t = DEVICE_STATE["thermometers"].setdefault(room, {"temperature": 22.0, "humidity": 50.0})
                 t["humidity"] = max(20, min(90, float(params["value"])))
-            _broadcast_state()
-        elif action == "open_curtain" and room:
-            dev = db.get_device_by_room_and_type(room, "curtain")
+        elif action == "open_curtain":
+            if not room:
+                raise ValueError("Необходимо указать комнату для команды")
+            
+            print(f"DEBUG: Открываем шторы в комнате {room}")
+            dev_start = time.time()
+            dev = _get_device_from_cache(room, "curtain")
+            dev_time = time.time() - dev_start
+            print(f"DEBUG: Получение устройства заняло {dev_time*1000:.2f}ms")
+            
             if not dev:
-                db.create_device(name=f"curtain:{room}", room=room, type_="curtain", is_on=True)
+                print(f"DEBUG: Создаем новое устройство шторы для {room}")
+                dev = db.create_device(name=f"curtain:{room}", room=room, type_="curtain", is_on=True)
+                _update_device_cache(room, "curtain", dev)
             else:
+                print(f"DEBUG: Обновляем существующее устройство шторы {dev['id']}")
                 db.update_device_state(dev["id"], True)
+                _update_device_cache(room, "curtain", {**dev, "is_on": True})
             with _STATE_LOCK:
                 DEVICE_STATE.setdefault("curtains", {})[room] = "open"
-            _broadcast_state()
-        elif action == "close_curtain" and room:
-            dev = db.get_device_by_room_and_type(room, "curtain")
+            print(f"DEBUG: Шторы в {room} открыты")
+        elif action == "close_curtain":
+            if not room:
+                raise ValueError("Необходимо указать комнату для команды")
+            
+            dev = _get_device_from_cache(room, "curtain")
             if not dev:
-                db.create_device(name=f"curtain:{room}", room=room, type_="curtain", is_on=False)
+                dev = db.create_device(name=f"curtain:{room}", room=room, type_="curtain", is_on=False)
+                _update_device_cache(room, "curtain", dev)
             else:
                 db.update_device_state(dev["id"], False)
+                _update_device_cache(room, "curtain", {**dev, "is_on": False})
             with _STATE_LOCK:
                 DEVICE_STATE.setdefault("curtains", {})[room] = "closed"
-            _broadcast_state()
         elif action == "start_vacuum":
-            print(f"Starting vacuum for room: {repr(room)}")
+            if not room:
+                raise ValueError("Необходимо указать комнату для команды")
+            
             # Пылесос логически не привязан к комнате, но если указана — учитываем
             dev = db.get_device_by_room_and_type(room, "vacuum")
-            print(f"Found device: {dev}")
             if not dev:
-                print(f"Creating new vacuum device for room: {room}")
                 db.create_device(name=f"vacuum:{room}", room=room, type_="vacuum", is_on=True)
             else:
-                print(f"Updating existing device {dev['id']}")
                 db.update_device_state(dev["id"], True)
-            print(f"Updating DEVICE_STATE for room: {room or 'global'}")
             with _STATE_LOCK:
                 DEVICE_STATE.setdefault("vacuums", {})[room or "global"] = "running"
                 VACUUM_PROGRESS.setdefault(room or "global", 0)  # Reset progress on start
-            print("Broadcasting state...")
-            _broadcast_state()
             # Start progress updates
             vacuum_key = room or "global"
-            print(f"Starting vacuum progress updates for key: {vacuum_key}")
             if vacuum_key in VACUUM_TIMERS:
                 VACUUM_TIMERS[vacuum_key].cancel()
             VACUUM_TIMERS[vacuum_key] = threading.Timer(1, _update_vacuum_progress, args=[vacuum_key])
             VACUUM_TIMERS[vacuum_key].start()
-            print("Vacuum started successfully!")
         elif action == "stop_vacuum":
+            if not room:
+                raise ValueError("Необходимо указать комнату для команды")
+            
             dev = db.get_device_by_room_and_type(room, "vacuum")
             if not dev:
                 db.create_device(name=f"vacuum:{room}", room=room, type_="vacuum", is_on=False)
@@ -234,7 +316,11 @@ def _apply_command(parsed: dict):
                     VACUUM_TIMERS[vacuum_key].cancel()
                     del VACUUM_TIMERS[vacuum_key]
                 VACUUM_PROGRESS.setdefault(vacuum_key, 0)  # Reset progress on stop
-            _broadcast_state()
+        
+        db_time = time.time() - db_start
+        total_time = time.time() - start_time
+        print(f"_apply_command timing: db_time={db_time*1000:.2f}ms, total_time={total_time*1000:.2f}ms")
+        
     except Exception as e:
         print(f"Error in _apply_command: {e}")
         import traceback
@@ -247,9 +333,9 @@ def _format_response(parsed: dict) -> str:
     room = params.get("room")
 
     if action == "turn_on_light":
-        return f"Свет{_in_room(room)} включен" if room else "Свет включен"
+        return f"Свет{_in_room(room)} включен" if room else "Ошибка: необходимо указать комнату"
     if action == "turn_off_light":
-        return f"Свет{_in_room(room)} выключен" if room else "Свет выключен"
+        return f"Свет{_in_room(room)} выключен" if room else "Ошибка: необходимо указать комнату"
     if action == "set_timer":
         value = params.get("value")
         unit = params.get("unit")
@@ -261,23 +347,23 @@ def _format_response(parsed: dict) -> str:
         value = params.get("value")
         return f"Громкость установлена на {value}%" if value is not None else "Громкость изменена"
     if action == "decrease_temperature":
-        return f"Температура{_in_room(room)} снижена" if room else "Температура снижена"
+        return f"Температура{_in_room(room)} снижена" if room else "Ошибка: необходимо указать комнату"
     if action == "decrease_humidity":
-        return f"Влажность{_in_room(room)} снижена" if room else "Влажность снижена"
+        return f"Влажность{_in_room(room)} снижена" if room else "Ошибка: необходимо указать комнату"
     if action == "set_temperature":
         value = params.get("value")
-        return f"Температура{_in_room(room)} установлена на {value}°C" if room and value is not None else "Температура установлена"
+        return f"Температура{_in_room(room)} установлена на {value}°C" if room and value is not None else "Ошибка: необходимо указать комнату и значение"
     if action == "set_humidity":
         value = params.get("value")
-        return f"Влажность{_in_room(room)} установлена на {value}💧" if room and value is not None else "Влажность установлена"
+        return f"Влажность{_in_room(room)} установлена на {value}💧" if room and value is not None else "Ошибка: необходимо указать комнату и значение"
     if action == "open_curtain":
-        return f"Шторы{_in_room(room)} открыты" if room else "Шторы открыты"
+        return f"Шторы{_in_room(room)} открыты" if room else "Ошибка: необходимо указать комнату"
     if action == "close_curtain":
-        return f"Шторы{_in_room(room)} закрыты" if room else "Шторы закрыты"
+        return f"Шторы{_in_room(room)} закрыты" if room else "Ошибка: необходимо указать комнату"
     if action == "start_vacuum":
-        return f"Пылесос запущен{_in_room(room)}" if room else "Пылесос запущен"
+        return f"Пылесос запущен{_in_room(room)}" if room else "Ошибка: необходимо указать комнату"
     if action == "stop_vacuum":
-        return f"Пылесос остановлен{_in_room(room)}" if room else "Пылесос остановлен"
+        return f"Пылесос остановлен{_in_room(room)}" if room else "Ошибка: необходимо указать комнату"
     return "Извините, не понял команду"
 
 
@@ -311,6 +397,15 @@ def static_proxy(path):
 def health():
     return jsonify({"status": "ok"})
 
+@app.route("/api/speech/status", methods=["GET"])
+def speech_status():
+    """Получение статуса системы распознавания речи"""
+    try:
+        status = get_status()
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({"error": f"Ошибка получения статуса: {e}"}), 500
+
 @app.route("/api/devices", methods=["GET"])
 def devices():
     # Prefer DB as source of truth
@@ -334,7 +429,8 @@ def devices_create():
         # mirror to memory for SSE fast path if light
         if dev and dev.get("type") == "light" and dev.get("room"):
             DEVICE_STATE.setdefault("lights", {})[dev["room"]] = bool(dev["is_on"])  # type: ignore
-            _broadcast_state()
+        # Обновляем кэш устройств
+        _invalidate_device_cache()
         return jsonify(dev), 201
     except Exception as e:
         return jsonify({"error": f"db error: {e}"}), 500
@@ -350,7 +446,8 @@ def devices_update(device_id: int):
             return jsonify({"error": "not found"}), 404
         if dev.get("type") == "light" and dev.get("room"):
             DEVICE_STATE.setdefault("lights", {})[dev["room"]] = bool(dev["is_on"])  # type: ignore
-            _broadcast_state()
+        # Обновляем кэш устройств
+        _invalidate_device_cache()
         return jsonify(dev)
     except Exception as e:
         return jsonify({"error": f"db error: {e}"}), 500
@@ -358,19 +455,41 @@ def devices_update(device_id: int):
 @app.route("/api/devices/stream", methods=["GET"])
 def devices_stream():
     def event_stream(q: queue.Queue):
-        # сразу отправим текущее состояние
-        first = json.dumps(_get_devices_snapshot())
-        yield f"data: {first}\n\n"
         try:
+            # сразу отправим текущее состояние
+            first = json.dumps(_get_devices_snapshot())
+            yield f"data: {first}\n\n"
+            
+            # Отправляем heartbeat каждые 30 секунд
+            import time
+            last_heartbeat = time.time()
+            
             while True:
-                data = q.get()
-                yield f"data: {data}\n\n"
+                try:
+                    # Таймаут для получения данных
+                    data = q.get(timeout=30)
+                    yield f"data: {data}\n\n"
+                    last_heartbeat = time.time()
+                except queue.Empty:
+                    # Отправляем heartbeat если нет данных
+                    current_time = time.time()
+                    if current_time - last_heartbeat > 30:
+                        yield f"data: {json.dumps({'heartbeat': True})}\n\n"
+                        last_heartbeat = current_time
+                        
         except GeneratorExit:
             pass
+        except Exception as e:
+            print(f"SSE error: {e}")
+            yield f"data: {json.dumps({'error': 'Connection error'})}\n\n"
 
     q: queue.Queue = queue.Queue(maxsize=10)
     _SUBSCRIBERS.append(q)
-    return Response(event_stream(q), mimetype="text/event-stream")
+    
+    response = Response(event_stream(q), mimetype="text/event-stream")
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['Connection'] = 'keep-alive'
+    return response
 
 @app.route("/api/routes", methods=["GET"])
 def api_routes():
@@ -420,6 +539,10 @@ def api_speech_to_action():
 
         # Применяем команду к состоянию устройств и рассылаем обновление
         _apply_command(parsed)
+        
+        # Обновляем кэш устройств и отправляем состояние синхронно для быстрого обновления
+        _invalidate_device_cache()
+        _broadcast_state()
 
         return jsonify({
             "text": text,
@@ -440,15 +563,18 @@ def api_speech_to_action():
 
 @app.route("/api/text_command", methods=["POST"])
 def api_text_command():
+    import time
+    start_time = time.time()
+    
     try:
         payload = request.get_json(force=True, silent=True) or {}
         text = payload.get("text", "").strip()
         if not text:
             return jsonify({"error": "Текст команды пуст"}), 400
         
-        print(f"Получена команда: {text}")
+        parse_start = time.time()
         parsed = parse_command(text)
-        print(f"Распарсено: {parsed}")
+        parse_time = time.time() - parse_start
         
         try:
             room = parsed.get("params", {}).get("room")
@@ -456,28 +582,36 @@ def api_text_command():
                 can = _canonicalize_room(room)
                 parsed.setdefault("params", {})["room"] = can
         except Exception as e:
-            print(f"Ошибка канонизации комнаты: {e}")
             pass
         
         response_text = _format_response(parsed)
-        print(f"Ответ: {response_text}")
         
+        apply_start = time.time()
         try:
             _apply_command(parsed)
-            print("Команда применена успешно")
         except Exception as e:
-            print(f"Ошибка применения команды: {e}")
             import traceback
             traceback.print_exc()
             return jsonify({"error": f"Ошибка применения команды: {e}"}), 500
+        apply_time = time.time() - apply_start
+        
+        # Обновляем кэш устройств и отправляем состояние синхронно для быстрого обновления
+        _invalidate_device_cache()
+        _broadcast_state()
+        
+        total_time = time.time() - start_time
         
         return jsonify({
             "text": text,
             "parsed": parsed,
-            "response": response_text
+            "response": response_text,
+            "timing": {
+                "parse_time": round(parse_time * 1000, 2),
+                "apply_time": round(apply_time * 1000, 2),
+                "total_time": round(total_time * 1000, 2)
+            }
         })
     except Exception as e:
-        print(f"Общая ошибка в api_text_command: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"Ошибка обработки команды: {e}"}), 500
@@ -526,6 +660,11 @@ def device_action():
                 pass
             response_text = _format_response(parsed)
             _apply_command(parsed)
+            
+            # Обновляем кэш устройств и отправляем состояние синхронно для быстрого обновления
+            _invalidate_device_cache()
+            _broadcast_state()
+            
             return jsonify({
                 "command": command,
                 "response": response_text,
@@ -571,4 +710,8 @@ def camera_snapshot():
 
 if __name__ == "__main__":
     # Для доступа из локальной сети — host="0.0.0.0"
-    app.run(debug=False, host="0.0.0.0", port=5000)
+    # Запуск с HTTPS на порту 5443
+    import ssl
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain('cert.pem', 'key.pem')
+    app.run(debug=False, host="0.0.0.0", port=5443, ssl_context=context)

@@ -6,7 +6,7 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "devices.sqlite3")
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=5.0)
     conn.row_factory = sqlite3.Row
     return conn
 

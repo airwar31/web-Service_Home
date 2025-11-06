@@ -58,6 +58,46 @@ button:hover {
     background: var(--primary-hover);
 }
 
+/* Voice recording button */
+#voice-record {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
+    margin: 0 auto 16px auto;
+}
+
+#voice-record:hover {
+    background: var(--primary-hover);
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(13, 110, 253, 0.4);
+}
+
+#voice-record:active {
+    transform: scale(0.95);
+}
+
+#voice-record.recording {
+    background: #dc3545;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
 /* Inputs */
 input[type="text"], select {
     width: 100%;
@@ -361,12 +401,53 @@ pre { background: #111827; color: #e5e7eb; padding: 12px; border-radius: 10px; o
   button { padding: 8px 12px; }
   input[type="text"], select { max-width: 100%; }
   #camera-video { max-width: 100%; }
+  
+  /* Voice section mobile */
+  #voice {
+    text-align: center;
+  }
+  
+  /* Quick commands mobile layout */
+  #command > div:first-child {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
 }
 
 @media (max-width: 520px) {
   .room-card .room-body { grid-template-columns: 1fr; }
   .room-card .room-actions button { padding: 6px 10px; }
   .status-grid { grid-template-columns: 1fr; }
+  
+  /* Voice button mobile */
+  #voice-record {
+    width: 70px;
+    height: 70px;
+    font-size: 16px;
+  }
+  
+  /* Quick commands mobile */
+  .quick-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  /* Command input mobile */
+  #command-input {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+  
+  /* Status cards mobile */
+  .status-card {
+    padding: 12px;
+  }
+  
+  .status-card .line {
+    font-size: 14px;
+  }
 }
 
 /* Simple controls */
@@ -468,4 +549,28 @@ pre { background: #111827; color: #e5e7eb; padding: 12px; border-radius: 10px; o
     background: linear-gradient(90deg, #10b981, #059669);
     transition: width 0.3s ease;
     border-radius: 10px;
+}
+
+/* Быстрые кнопки команд */
+.quick-btn {
+    padding: 8px 16px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.quick-btn:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+    transform: translateY(-1px);
+}
+
+.quick-btn:active {
+    transform: translateY(0);
+    background: #dee2e6;
 }

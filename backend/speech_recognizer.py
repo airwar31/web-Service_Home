@@ -17,8 +17,11 @@ except ImportError as e:
 class RecognitionError(Exception):
     pass
 
+# Глобальная переменная для кэширования модели
+_FW_MODEL = None
 
 def _configure_ffmpeg() -> None:
+    """Настройка FFmpeg для конвертации аудио"""
     if not SPEECH_RECOGNITION_AVAILABLE:
         raise RecognitionError("Speech recognition dependencies not available")
     
@@ -27,18 +30,20 @@ def _configure_ffmpeg() -> None:
     if custom_path and os.path.exists(custom_path):
         AudioSegment.converter = custom_path  # type: ignore
         return
+    
     # Иначе пытаемся найти ffmpeg в PATH
     found = which("ffmpeg")
     if found:
         AudioSegment.converter = found  # type: ignore
         return
+    
     # Если не нашли — подскажем, что нужно установить
     raise RecognitionError(
         "FFmpeg не найден. Установите ffmpeg и добавьте в PATH, или укажите путь в переменной окружения FFMPEG_PATH"
     )
 
-
 def _ensure_wav(input_path: str) -> str:
+    """Конвертация аудио в WAV формат для Whisper"""
     ext = get_ext(input_path)
     if ext == "wav":
         return input_path
@@ -59,6 +64,7 @@ def _ensure_wav(input_path: str) -> str:
         except Exception as e:
             raise RecognitionError(f"Ошибка декодирования аудио: {e}. Проверьте, что формат поддерживается ffmpeg")
 
+    # Нормализация аудио для Whisper
     audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
     try:
         audio.export(output_path, format="wav")
@@ -66,15 +72,28 @@ def _ensure_wav(input_path: str) -> str:
         raise RecognitionError(f"Не удалось сконвертировать в WAV: {e}")
     return output_path
 
-
 def _normalize_lang_for_whisper(language: Optional[str]) -> Optional[str]:
+    """Нормализация языка для Whisper (ru-RU -> ru)"""
     if not language:
         return None
     # Expect values like "ru-RU"; Whisper prefers ISO 639-1 like "ru"
     return language.split("-")[0].lower()
 
-
 def recognize_from_file(file_path: str, language: str = "ru-RU", timeout: Optional[float] = None) -> str:
+    """
+    Распознавание речи из аудиофайла
+    
+    Args:
+        file_path: Путь к аудиофайлу
+        language: Язык распознавания (по умолчанию ru-RU)
+        timeout: Таймаут (не используется в текущей реализации)
+    
+    Returns:
+        Распознанный текст
+    
+    Raises:
+        RecognitionError: При ошибках распознавания
+    """
     if not SPEECH_RECOGNITION_AVAILABLE:
         raise RecognitionError("Speech recognition dependencies not available. Install faster-whisper and pydub.")
     
@@ -114,3 +133,34 @@ def recognize_from_file(file_path: str, language: str = "ru-RU", timeout: Option
                 os.remove(wav_path)
             except OSError:
                 pass
+
+def get_status() -> dict:
+    """
+    Получение статуса системы распознавания речи
+    
+    Returns:
+        Словарь со статусом системы
+    """
+    return {
+        "speech_recognition_available": SPEECH_RECOGNITION_AVAILABLE,
+        "model_loaded": _FW_MODEL is not None,
+        "whisper_model": "tiny",
+        "ffmpeg_available": _check_ffmpeg_availability(),
+        "supported_formats": ["wav", "mp3", "webm", "ogg", "m4a", "flac"],
+        "supported_languages": ["ru"],
+        "protocol": "https",
+        "about": {
+            "name": "Speech Recognition Service",
+            "version": "1.0.0",
+            "description": "Сервис распознавания речи на основе Whisper",
+            "author": "Web Service Home Team"
+        }
+    }
+
+def _check_ffmpeg_availability() -> bool:
+    """Проверка доступности FFmpeg"""
+    try:
+        _configure_ffmpeg()
+        return True
+    except RecognitionError:
+        return False

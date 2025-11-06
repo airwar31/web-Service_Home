@@ -27,10 +27,6 @@
       </div>
       <button class="tab-btn" data-tab="tab-home">Главная</button>
       <button class="tab-btn" data-tab="tab-status">Статус</button>
-      <button class="tab-btn" data-tab="tab-rooms">Комнаты</button>
-      <button class="tab-btn" data-tab="tab-devices">Устройства</button>
-      <button class="tab-btn" data-tab="tab-voice">Голос</button>
-      <button class="tab-btn" data-tab="tab-camera">Камера</button>
       <button class="tab-btn" data-tab="tab-about">О проекте</button>
     </aside>
 
@@ -50,69 +46,44 @@
           <h2>Статус устройств</h2>
           <div id="status-grid" class="status-grid"></div>
         </div>
-        <div id="command" style="margin-top:12px;">
-          <h2>Отправить команду</h2>
-          <input type="text" id="command-input" placeholder="Например: включи свет">
-          <button id="send-command">Отправить</button>
-          <p id="response"></p>
-        </div>
-      </section>
-
-      <section id="tab-rooms" class="tab-pane" style="display:none;">
-        <div id="rooms">
-          <h2>Комнаты</h2>
-          <div id="rooms-container"></div>
-        </div>
-      </section>
-
-      <section id="tab-devices" class="tab-pane" style="display:none;">
-        <div id="devices">
-          <h2>Устройства</h2>
-          
-          <div class="simple-controls">
-            <select id="device-type">
-              <option value="light">Свет</option>
-              <option value="thermometer">Термометр</option>
-              <option value="curtain">Шторы</option>
-              <option value="vacuum">Пылесос</option>
-            </select>
-            <select id="device-room">
-              <option value="зал">Зал</option>
-              <option value="кухня">Кухня</option>
-              <option value="комната">Комната</option>
-              <option value="ванная">Ванная</option>
-            </select>
-            <button id="device-action-btn">Включить</button>
-          </div>
-          
-          <div id="devices-list"></div>
-          <div id="device-status-display"></div>
-        </div>
-      </section>
-
-      <section id="tab-voice" class="tab-pane" style="display:none;">
-        <div id="voice">
+        
+        <div id="voice" style="margin-top:24px;">
           <h2>Голосовое управление</h2>
-          <button id="voice-record">Записать голосовую команду</button>
+          <button id="voice-record" title="Зажмите и держите для записи голосовой команды">🎤</button>
+          <div style="font-size: 14px; color: #6c757d; margin-top: 8px;">Зажмите и держите кнопку для записи</div>
           <pre id="voice-out"></pre>
         </div>
-      </section>
-
-      <section id="tab-camera" class="tab-pane" style="display:none;">
-        <div id="camera">
-          <h2>Камера (live)</h2>
-          <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <select id="camera-select" style="min-width:220px"></select>
-            <button id="camera-refresh">Обновить камеры</button>
+        
+        <div id="command" style="margin-top:24px;">
+          <h2>Быстрые команды</h2>
+          <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+            <button onclick="sendQuickCommand('включи свет в зале')" class="quick-btn">💡 Свет в зале</button>
+            <button onclick="sendQuickCommand('включи свет в кухне')" class="quick-btn">💡 Свет в кухне</button>
+            <button onclick="sendQuickCommand('открой шторы в зале')" class="quick-btn">🪟 Шторы в зале</button>
+            <button onclick="sendQuickCommand('запусти пылесос в зале')" class="quick-btn">🧹 Пылесос в зале</button>
           </div>
-          <video id="camera-video" autoplay playsinline style="width:100%;max-width:480px;background:#000;border-radius:8px"></video>
-          <p id="camera-status"></p>
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <input type="text" id="command-input" placeholder="Например: включи свет в зале" style="flex: 1;">
+            <button id="send-command" style="padding: 8px 16px;">Отправить</button>
+          </div>
+          <div id="response" style="min-height: 20px; padding: 8px; background: #f8f9fa; border-radius: 4px; border-left: 3px solid #0d6efd;"></div>
         </div>
       </section>
 
       <section id="tab-about" class="tab-pane" style="display:none;">
         <h2>О проекте</h2>
-        <p>Минималистичная сине‑белая тема. Управление устройствами и датчиками, голосовой ввод и просмотр с камеры.</p>
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #0d6efd; margin-bottom: 20px;">
+          <h3 style="margin-top: 0; color: #0d6efd;">Web Service Home</h3>
+          <p><strong>Версия:</strong> 1.0.0</p>
+          <p><strong>Протокол:</strong> HTTPS</p>
+          <p><strong>Описание:</strong> Минималистичная сине‑белая тема. Управление устройствами и датчиками, голосовой ввод и просмотр с камеры.</p>
+          <p><strong>Создано при поддержке:</strong> ИИ-COPILOT 🤖</p>
+        </div>
+        
+        <div style="background: #e8f5e8; padding: 16px; border-radius: 8px; border-left: 4px solid #28a745;">
+          <h4 style="margin-top: 0; color: #28a745;">🎤 Распознавание речи</h4>
+          <p>Система использует Whisper для распознавания голосовых команд на русском языке.</p>
+        </div>
       </section>
     </main>
   </div>
