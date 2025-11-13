@@ -16,6 +16,21 @@ from flask import make_response, send_from_directory
 import subprocess
 import shlex
 import requests
+# Optional Home Assistant bridge (best-effort)
+try:
+    from backend.home_assistant_bridge import notify_home_assistant_async
+    HA_BRIDGE_AVAILABLE = True
+except Exception:
+    # Provide a noop so code can call notify_home_assistant_async without guard
+    def notify_home_assistant_async(parsed):
+        return None
+    HA_BRIDGE_AVAILABLE = False
+try:
+    # public helper to call HA services
+    from backend.home_assistant_bridge import call_service as ha_call_service
+except Exception:
+    def ha_call_service(domain, service, data):
+        return {"success": False, "error": "home_assistant_bridge not available"}
 
 load_dotenv()
 app = Flask(__name__)
@@ -318,6 +333,11 @@ def _apply_command(parsed: dict):
                 VACUUM_PROGRESS.setdefault(vacuum_key, 0)  # Reset progress on stop
         
         db_time = time.time() - db_start
+        # Notify Home Assistant (best-effort, non-blocking)
+        try:
+            notify_home_assistant_async(parsed)
+        except Exception as _e:
+            print(f"home_assistant_bridge: notify failed: {_e}")
         total_time = time.time() - start_time
         print(f"_apply_command timing: db_time={db_time*1000:.2f}ms, total_time={total_time*1000:.2f}ms")
         
@@ -690,6 +710,26 @@ def camera_snapshot():
                 resp = make_response(r.content)
                 resp.headers["Content-Type"] = r.headers.get("content-type", "image/jpeg")
                 return resp
+
+
+            @app.route("/api/ha/service_call", methods=["POST"])
+            def api_ha_service_call():
+                """Call Home Assistant service via REST API using HA_URL and HA_TOKEN from env.
+
+                Expected JSON body: {"domain": "light", "service": "turn_on", "data": {"entity_id": "light.kitchen"}}
+                """
+                try:
+                    payload = request.get_json(force=True, silent=True) or {}
+                    domain = payload.get("domain")
+                    service = payload.get("service")
+                    data = payload.get("data", {})
+                    if not domain or not service:
+                        return jsonify({"error": "domain and service are required"}), 400
+
+                    res = ha_call_service(domain, service, data)
+                    return jsonify(res)
+                except Exception as e:
+                    return jsonify({"error": f"Internal error: {e}"}), 500
     except Exception:
         pass
     # Fallback: используем ffmpeg для получения одного кадра (rtsp/rtmp/http/mjpeg)

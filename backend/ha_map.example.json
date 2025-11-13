@@ -1,0 +1,15 @@
+{
+  "#": "Example mapping from parser room names to Home Assistant entity_id or area_id",
+  "кухня": {
+    "lights": ["light.kitchen_main", "light.kitchen_spot"],
+    "thermometer": "sensor.kitchen_temperature",
+    "curtain": "cover.kitchen_curtain",
+    "vacuum": "vacuum.xiaomi_vacuum"
+  },
+  "зал": {
+    "lights": ["light.livingroom_main"],
+    "thermometer": "sensor.livingroom_temperature",
+    "curtain": "cover.livingroom_curtain",
+    "vacuum": "vacuum.xiaomi_vacuum"
+  }
+}

@@ -7,16 +7,125 @@ import threading
 import random
 import time
 from typing import Dict, Any, List, Optional, Callable
-
+import logging
+from requests import get, post
 from app.models.device import Device, DeviceState, ThermometerData, DeviceType
 from app.models.database import DatabaseModel
 from app.services.command_parser_service import CommandParserService
 from app.models.command import Command, CommandAction
+from homeassistant_api import Client, Domain
+import asyncio
+import requests
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+url = 'http://192.168.31.66:8123/api'
+token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxYTJiNWI0MWYxYWY0MjhhYTExNTI5MGQ1M2UwODIwYyIsImlhdCI6MTc2Mjg2MTE2NCwiZXhwIjoyMDc4MjIxMTY0fQ.QtUhvwuMFN5TGaPyCo1wUXdmov2esxKB09ewd1whYR8'
 
+class ConnectedSamsungTV:
+    def __init__(self, tv_entity_id: str = "media_player.samsung_7_series_55_ue55tu7500uxru"):
+       
+    
+        self.ha_url = "http://192.168.31.66:8123".rstrip('/')
+        self.ha_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxYTJiNWI0MWYxYWY0MjhhYTExNTI5MGQ1M2UwODIwYyIsImlhdCI6MTc2Mjg2MTE2NCwiZXhwIjoyMDc4MjIxMTY0fQ.QtUhvwuMFN5TGaPyCo1wUXdmov2esxKB09ewd1whYR8"
+        self.tv_entity_id = tv_entity_id
+        self.headers = {
+            'Authorization': f'Bearer {self.ha_token}',
+            'Content-Type': 'application/json'
+        }
+        
+    def connect(self) -> bool:
+        """Проверка подключения к телевизору"""
+        try:
+            # Просто проверяем, что entity существует
+            state = self.get_state()
+            if state:
+                print(f"✓ Подключено к: {state.get('friendly_name', self.tv_entity_id)}")
+                return True
+            else:
+                print("✗ Телевизор не найден или недоступен")
+                return False
+                
+        except Exception as e:
+            print(f"✗ Ошибка подключения: {e}")
+            return False
+    
+    def _call_service(self, service: str, service_data: Optional[Dict] = None) -> bool:
+        """Вызов сервиса Home Assistant"""
+        url = f"{self.ha_url}/api/services/media_player/{service}"
+        data = {
+            "entity_id": self.tv_entity_id
+        }
+        
+        if service_data:
+            data.update(service_data)
+        
+        try:
+            response = requests.post(
+                url,
+                headers=self.headers,
+                json=data,
+                timeout=10
+            )
+            return response.status_code == 200
+        except Exception as e:
+            print(f"Ошибка при вызове сервиса {service}: {e}")
+            return False
+    
+    def get_state(self) -> Optional[Dict[str, Any]]:
+        """Получить состояние телевизора"""
+        url = f"{self.ha_url}/api/states/{self.tv_entity_id}"
+        
+        try:
+            response = requests.get(url, headers=self.headers, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                print(f"Ошибка получения состояния: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"Ошибка при получении состояния: {e}")
+            return None
+    
+    def turn_on(self) -> bool:
+        return self._call_service("turn_on")
+    
+    def turn_off(self) -> bool:
+        return self._call_service("turn_off")
+    
+    def set_volume(self, volume: float) -> bool:
+        return self._call_service("volume_set", {"volume_level": volume})
+    
+    def volume_up(self) -> bool:
+        return self._call_service("volume_up")
+    
+    def volume_down(self) -> bool:
+        return self._call_service("volume_down")
+    
+    def select_source(self, source: str) -> bool:
+        return self._call_service("select_source", {"source": source})
+    
+    def media_play(self) -> bool:
+        return self._call_service("media_play")
+    
+    def media_pause(self) -> bool:
+        return self._call_service("media_pause")
+    
+    def is_on(self) -> bool:
+        state = self.get_state()
+        return state and state.get('state') == 'on'
 
 class DeviceController:
+
+
+
+# Настройка логирования
+
+
     """Контроллер для управления устройствами"""
+
     
+
+
     def __init__(self):
         self.db = DatabaseModel()
         self.command_parser = CommandParserService()
@@ -32,10 +141,11 @@ class DeviceController:
         self.vacuum_progress = {}
         self.vacuum_timers = {}
         self.state_lock = threading.Lock()
-        
+        self.TV = ConnectedSamsungTV()
         # Инициализация
         self._initialize_devices()
         self._update_thermometers()
+
     
     def _initialize_devices(self):
         """Инициализация устройств в базе данных"""
@@ -158,7 +268,9 @@ class DeviceController:
         
         with self.state_lock:
             self.device_state.curtains[room] = "open"
-        return f"Шторы в {room} открыты"
+        return f"Шторы в {room} открыты", self.TV.turn_on()
+
+
     
     def _close_curtain(self, room: str) -> str:
         """Закрыть шторы"""
@@ -167,8 +279,10 @@ class DeviceController:
         
         with self.state_lock:
             self.device_state.curtains[room] = "closed"
-        return f"Шторы в {room} закрыты"
-    
+        return f"Шторы в {room} закрыты", self.TV.turn_off()
+
+
+
     def _start_vacuum(self, room: str) -> str:
         """Запустить пылесос"""
         if not room:
@@ -177,7 +291,18 @@ class DeviceController:
         with self.state_lock:
             self.device_state.vacuums[room] = "running"
             self.vacuum_progress[room] = 0
-        
+        res = get(f'{url}/states', headers={"Authorization": f"Bearer {token}"}).json()
+        for state in res[-5:]:
+            if 'vacuum' in state['entity_id']:
+                entity_id = state['entity_id']
+                print(entity_id)
+        from homeassistant_api import Client
+        with Client(url, token) as client:
+            # Получение домена vacuum
+            vacuum_domain = client.get_domain("vacuum")
+            print(vacuum_domain)
+            # Запуск уборки для конкретного пылесоса
+            vacuum_domain.start(entity_id=entity_id)        
         # Запускаем таймер для прогресса пылесоса
         self._start_vacuum_timer(room)
         return f"Пылесос в {room} запущен"
@@ -191,7 +316,18 @@ class DeviceController:
             self.device_state.vacuums[room] = "stopped"
             if room in self.vacuum_progress:
                 del self.vacuum_progress[room]
-        
+        res = get(f'{url}/states', headers={"Authorization": f"Bearer {token}"}).json()
+        for state in res[-5:]:
+            if 'vacuum' in state['entity_id']:
+                entity_id = state['entity_id']
+                print(entity_id)
+        from homeassistant_api import Client
+        with Client(url, token) as client:
+            # Получение домена vacuum
+            vacuum_domain = client.get_domain("vacuum")
+            print(vacuum_domain)
+            # Запуск уборки для конкретного пылесоса
+            vacuum_domain.stop(entity_id=entity_id)        
         # Останавливаем таймер
         if room in self.vacuum_timers:
             self.vacuum_timers[room].cancel()
