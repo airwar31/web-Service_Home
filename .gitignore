@@ -1,0 +1,49 @@
+﻿# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Secrets & Environment variables
+.env
+.env.*
+!.env.example
+
+# SSL Certificates & Private Keys
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+cert.pem
+key.pem
+
+# Databases & Runtime storage
+*.sqlite
+*.sqlite3
+*.db
+backend/devices.sqlite3
+
+# Large presentations & Office lock files
+~$*
+*.pptx
+*.ppt
+docs/*.pptx
+
+# Logs
+*.log
+logs/
+
+# IDE & OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

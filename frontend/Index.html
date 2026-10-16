@@ -1,0 +1,185 @@
+﻿<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmartHome OS — Единая панель управления умным домом</title>
+    <meta name="description" content="Интеллектуальная система управления умным домом с поддержкой голосовых команд Whisper, Web Speech API и Home Assistant" />
+    <link rel="stylesheet" href="/static/css/main.css" />
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header-bar">
+            <a href="/" class="brand">
+                <div class="brand-icon">🏠</div>
+                <div>
+                    <div>SmartHome <span style="font-size: 0.8em; font-weight: 500; opacity: 0.85;">OS</span></div>
+                </div>
+                <span class="brand-badge">v2.0 MVC</span>
+            </a>
+
+            <div class="header-actions">
+                <!-- SSE Online Indicator -->
+                <div class="status-pill" id="sseStatusPill" title="Статус реального времени">
+                    <span class="pulse-dot" id="sseDot"></span>
+                    <span id="sseText">Онлайн (SSE)</span>
+                </div>
+
+                <!-- Text-to-Speech Toggle -->
+                <button type="button" class="icon-btn" id="ttsToggleBtn" onclick="toggleTTS()" title="Озвучивать ответы голосом">
+                    <span id="ttsIcon">🔊</span>
+                </button>
+
+                <!-- Home Assistant Bridge Modal Trigger -->
+                <button type="button" class="btn btn-secondary" onclick="openHAModal()" title="Статус интеграции Home Assistant">
+                    <span>⚡</span>
+                    <span>Home Assistant</span>
+                </button>
+
+                <!-- Theme Toggle -->
+                <button type="button" class="icon-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Переключить тему">
+                    <span id="themeIcon">☀️</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Quick Stats Ribbon -->
+        <section class="stats-ribbon">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">💡</div>
+                <div>
+                    <div class="stat-value" id="statLights">0 / 4</div>
+                    <div class="stat-label">Освещение</div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4;">🌡️</div>
+                <div>
+                    <div class="stat-value" id="statTemp">22.5°C</div>
+                    <div class="stat-label">Средняя температура</div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">🪟</div>
+                <div>
+                    <div class="stat-value" id="statCurtains">Закрыты</div>
+                    <div class="stat-label">Шторы</div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: rgba(99, 102, 241, 0.15); color: #6366f1;">🧹</div>
+                <div>
+                    <div class="stat-value" id="statVacuum">Остановлен</div>
+                    <div class="stat-label">Робот-пылесос</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Rooms Grid -->
+        <section>
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span>🚪 Комнаты и устройства</span>
+                </h2>
+                <button type="button" class="btn btn-secondary" style="font-size: 0.8rem; padding: 6px 14px;" onclick="loadStatus()">
+                    🔄 Обновить
+                </button>
+            </div>
+
+            <div id="roomsGrid" class="rooms-grid">
+                <!-- Dynamically populated by script.js -->
+            </div>
+        </section>
+
+        <!-- Voice & Command Control Deck -->
+        <section class="control-deck">
+            <!-- Voice Studio -->
+            <div class="deck-card">
+                <div class="section-header" style="margin-bottom: 8px;">
+                    <h3 class="section-title" style="font-size: 1.15rem;">
+                        <span>🎤 Голосовое управление</span>
+                    </h3>
+                    <span class="brand-badge" style="background: var(--primary-light); color: var(--primary);">Whisper + WebSpeech</span>
+                </div>
+
+                <div class="mic-wrapper">
+                    <button type="button" class="mic-btn" id="micBtn" title="Нажмите или удерживайте для голосовой команды">
+                        🎙️
+                    </button>
+                    <div class="mic-hint" id="micHint">Нажмите на микрофон для записи команды</div>
+                </div>
+
+                <div class="transcript-box" id="voiceTranscript">
+                    <span style="color: var(--text-muted);">Здесь появится распознанный текст вашей команды...</span>
+                </div>
+            </div>
+
+            <!-- Command Console -->
+            <div class="deck-card">
+                <div class="section-header" style="margin-bottom: 8px;">
+                    <h3 class="section-title" style="font-size: 1.15rem;">
+                        <span>💬 Текстовые команды</span>
+                    </h3>
+                    <span class="brand-badge" style="background: var(--success-light); color: var(--success);">NLP Classifier</span>
+                </div>
+
+                <div class="command-input-row">
+                    <input type="text" id="commandInput" class="command-input" placeholder="Например: включи свет на кухне или закрой шторы..." autocomplete="off" />
+                    <button type="button" class="btn btn-primary" id="sendCommandBtn" onclick="sendCommand()">
+                        Отправить
+                    </button>
+                </div>
+
+                <!-- Quick Command Preset Chips -->
+                <div class="quick-chips">
+                    <button type="button" class="quick-chip" onclick="quickCommand('включи свет везде')">💡 Включить весь свет</button>
+                    <button type="button" class="quick-chip" onclick="quickCommand('выключи свет везде')">🌑 Выключить весь свет</button>
+                    <button type="button" class="quick-chip" onclick="quickCommand('открой шторы в зале')">🪟 Открыть шторы</button>
+                    <button type="button" class="quick-chip" onclick="quickCommand('запусти пылесос в зале')">🧹 Запустить пылесос</button>
+                    <button type="button" class="quick-chip" onclick="quickCommand('какая температура на кухне')">🌡️ Температура на кухне</button>
+                    <button type="button" class="quick-chip" onclick="quickCommand('статус устройств')">📊 Статус системы</button>
+                </div>
+
+                <div class="response-box" id="commandResponse">
+                    <span>Система готова к приему команд.</span>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Home Assistant Modal -->
+    <div id="haModal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(8px); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px;" onclick="if(event.target === this) closeHAModal()">
+        <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-xl); width: 100%; max-width: 540px; padding: 28px; box-shadow: var(--shadow-lg);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
+                <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                    <span>⚡ Home Assistant Мост</span>
+                </h3>
+                <button type="button" style="background:none; border:none; font-size:1.5rem; color:var(--text-muted); cursor:pointer;" onclick="closeHAModal()">&times;</button>
+            </div>
+            
+            <p style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 20px;">
+                Сервис поддерживает двухстороннюю бесшовную синхронизацию с сервером <strong>Home Assistant</strong> через REST API и MQTT брокер.
+            </p>
+
+            <div style="background: var(--bg-muted); border-radius: var(--radius-md); padding: 16px; margin-bottom: 20px; font-size: 0.88rem; color: var(--text-secondary); line-height: 1.8;">
+                <div>🌐 <strong>Адрес (HA_URL):</strong> <code style="color: var(--primary);">http://homeassistant.local:8123</code></div>
+                <div>🔑 <strong>Авторизация:</strong> Long-Lived Access Token в файле <code>.env</code></div>
+                <div>📡 <strong>MQTT Топик:</strong> <code>homeassistant/voice/commands</code></div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeHAModal()">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="/static/js/script.js"></script>
+</body>
+</html>
